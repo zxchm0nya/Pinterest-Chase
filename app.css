@@ -1,0 +1,80 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+  background: #0d0d0d;
+  color: #fff;
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
+}
+.wrap { width: 100%; max-width: 420px; }
+h1 { font-size: 22px; text-align: center; margin: 0 0 4px; }
+h1 span { color: #E60023; }
+.sub { text-align: center; color: #999; font-size: 13px; margin-bottom: 20px; }
+.card {
+  background: #1a1a1a;
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 14px;
+}
+label { font-size: 12px; color: #999; display: block; margin-bottom: 4px; }
+input {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  border: 1px solid #333;
+  background: #111;
+  color: #fff;
+  font-size: 14px;
+}
+button {
+  width: 100%;
+  padding: 11px;
+  margin-bottom: 8px;
+  border: none;
+  border-radius: 10px;
+  background: #E60023;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+button:hover { background: #c9001f; }
+button.secondary { background: #2a2a2a; }
+button.secondary:hover { background: #383838; }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; }
+.row input { flex: 1; }
+.row button { flex: 0 0 90px; }
+.target {
+  background: #111;
+  border: 1px solid #E60023;
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+.target .word { font-size: 19px; font-weight: 700; }
+.target .arrow { color: #999; margin: 4px 0; }
+#timer { font-size: 40px; font-weight: 800; text-align: center; margin: 8px 0 16px; }
+ul { list-style: none; padding: 0; margin: 8px 0; }
+li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 4px;
+  border-bottom: 1px solid #262626;
+  font-size: 14px;
+}
+li:last-child { border-bottom: none; }
+.muted { color: #888; font-size: 12px; text-align: center; margin: 6px 0; }
+.winner {
+  background: #E60023;
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+  font-size: 15px;
+  margin: 8px 0;
+}
+.badge { background: #E60023; border-radius: 6px; padding: 2px 6px; font-size: 11px; }
