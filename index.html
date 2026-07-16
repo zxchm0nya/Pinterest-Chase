@@ -1109,6 +1109,55 @@
   .toast b {
     color: #ff8b9b;
   }
+  .update-banner {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    z-index: 45;
+    width: min(680px, calc(100vw - 28px));
+    transform: translateX(-50%);
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 16px;
+    border: 1px solid rgba(255, 209, 102, .6);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(34, 28, 16, .98), rgba(18, 18, 24, .98));
+    box-shadow: 0 18px 46px rgba(0,0,0,.45), 0 0 34px rgba(255, 209, 102, .16);
+    color: #fff;
+  }
+  .update-banner.show {
+    display: flex;
+  }
+  .update-banner b {
+    color: #ffd166;
+  }
+  .update-banner span {
+    display: block;
+    color: rgba(255,255,255,.78);
+    font-size: 12px;
+    margin-top: 3px;
+  }
+  .update-banner a {
+    flex: 0 0 auto;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #ffd166, #ff9f1c);
+    color: #201408;
+    font-weight: 900;
+    text-decoration: none;
+    box-shadow: 0 10px 24px rgba(255, 159, 28, .25);
+  }
+  @media(max-width:620px) {
+    .update-banner {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .update-banner a {
+      text-align: center;
+    }
+  }
   @keyframes toastIn {
     from { opacity: 0; transform: translateY(-22px) scale(.97); filter: blur(4px); }
     to { opacity: 1; transform: translateY(0) scale(1); }
@@ -1186,6 +1235,7 @@
     <div id="app"></div>
   </div>
   <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+  <div id="update-banner" class="update-banner" aria-live="polite"></div>
 
 <script>
   const glowPointer = { x: -9999, y: -9999 };
@@ -1677,6 +1727,35 @@
     toast.innerHTML = `<b>${escapeHtml(title)}</b><br>${escapeHtml(text)}`;
     stack.appendChild(toast);
     setTimeout(() => toast.remove(), 3300);
+  }
+
+  function renderUpdateBanner(status) {
+    const banner = document.getElementById('update-banner');
+    if (!banner) return;
+    if (!status || !status.updateAvailable) {
+      banner.classList.remove('show');
+      banner.innerHTML = '';
+      return;
+    }
+    const installed = (status.installedSha || '').slice(0, 7) || 'неизвестно';
+    const latest = (status.latestSha || '').slice(0, 7) || 'новый';
+    const message = status.latestMessage || 'На GitHub вышел новый commit игры.';
+    const downloadUrl = status.downloadUrl || status.repoUrl || 'https://github.com/zxchm0nya/Pinterest-Chase';
+    banner.innerHTML = `
+      <div>
+        <b>Доступна обнова Pinterest Chase: ${escapeHtml(installed)} -> ${escapeHtml(latest)}</b>
+        <span>${escapeHtml(message)}</span>
+      </div>
+      <a href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener noreferrer">Скачать</a>
+    `;
+    banner.classList.add('show');
+  }
+
+  async function refreshUpdateStatus() {
+    try {
+      const status = await api('GET', '/update/status');
+      if (!status.error) renderUpdateBanner(status);
+    } catch (e) {}
   }
 
   function avatarLetter(nickname) {
@@ -2649,6 +2728,8 @@
   }
 
   warmVisualAssets();
+  refreshUpdateStatus();
+  setInterval(refreshUpdateStatus, 60_000);
   render();
 })();
 </script>
