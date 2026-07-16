@@ -24,13 +24,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 WORDS_FILE = ROOT / "words.json"
 SOCIAL_FILE = ROOT / "social_state.json"
-UPDATE_STATE_FILE = ROOT / ".update_state.json"
-UPDATE_REPO_OWNER = "zxchm0nya"
-UPDATE_REPO_NAME = "Pinterest-Chase"
-UPDATE_REPO_URL = f"https://github.com/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}"
-UPDATE_API_URL = f"https://api.github.com/repos/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}"
-UPDATE_COMMIT_URL = f"{UPDATE_API_URL}/commits/main"
-UPDATE_CHECK_INTERVAL = 600
 PUBLIC_ID_MAX_LENGTH = 32
 AVATAR_MAX_LENGTH = 24000
 MAX_HEADER_BYTES = 32_768
@@ -59,24 +52,10 @@ BLOCKED_STATIC_NAMES = {
     "connect_lan.py",
     "assign_public_id.py",
     "assign_public_id.bat",
-    ".update_state.json",
 }
 ALLOWED_STATIC_NAMES = {
 }
 request_buckets = {}
-update_status = {
-    "repoUrl": UPDATE_REPO_URL,
-    "downloadUrl": f"{UPDATE_REPO_URL}/archive/refs/heads/main.zip",
-    "installedSha": "",
-    "latestSha": "",
-    "latestMessage": "",
-    "latestTitle": "",
-    "latestUrl": UPDATE_REPO_URL,
-    "checkedAt": None,
-    "updateAvailable": False,
-    "error": "",
-}
-update_notice_printed_for = ""
 
 DEFAULT_WORDS = ["камень", "дерево", "роналду", "электростанция", "зубочистка", "ложка"]
 
@@ -92,85 +71,6 @@ def load_words():
 
 
 WORDS = load_words()
-
-
-def save_update_state(data):
-    with contextlib.suppress(Exception):
-        UPDATE_STATE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def load_update_state():
-    try:
-        data = json.loads(UPDATE_STATE_FILE.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def short_sha(value):
-    value = str(value or "").strip()
-    return value[:7] if value else ""
-
-
-def fetch_update_status_once():
-    global update_status, update_notice_printed_for
-    state = load_update_state()
-    try:
-        body, _ = fetch_url(UPDATE_COMMIT_URL + "?t=" + str(int(time.time())), timeout=8, limit=256_000)
-        remote = json.loads(body.decode("utf-8", errors="replace"))
-        if not isinstance(remote, dict):
-            raise RuntimeError("GitHub commit response has bad format")
-        latest_sha = str(remote.get("sha") or "").strip()
-        commit = remote.get("commit") or {}
-        commit_message = str(commit.get("message") or "").strip().splitlines()[0] if isinstance(commit, dict) else ""
-        html_url = str(remote.get("html_url") or UPDATE_REPO_URL)
-        installed_sha = str(state.get("installedSha") or "").strip()
-        if not installed_sha and latest_sha:
-            installed_sha = latest_sha
-        update_available = bool(latest_sha and installed_sha and latest_sha != installed_sha)
-        update_status = {
-            "repoUrl": UPDATE_REPO_URL,
-            "downloadUrl": f"{UPDATE_REPO_URL}/archive/refs/heads/main.zip",
-            "installedSha": installed_sha,
-            "latestSha": latest_sha,
-            "latestMessage": commit_message,
-            "latestTitle": "Pinterest Chase",
-            "latestUrl": html_url,
-            "checkedAt": int(time.time()),
-            "updateAvailable": update_available,
-            "error": "",
-        }
-        save_update_state({
-            **update_status,
-            "installedSha": installed_sha,
-        })
-        if update_available and update_notice_printed_for != latest_sha:
-            update_notice_printed_for = latest_sha
-            print("")
-            print("=== ДОСТУПНА ОБНОВА PINTEREST CHASE ===")
-            print(f"Установлен commit: {short_sha(installed_sha) or 'неизвестно'}")
-            print(f"Новый commit: {short_sha(latest_sha)}")
-            if update_status["latestMessage"]:
-                print(f"Последнее изменение: {update_status['latestMessage']}")
-            print(f"Скачать: {update_status['downloadUrl']}")
-            print("Плашка обновы будет висеть в игре, пока игрок не скачает новую копию.")
-            print("=======================================")
-            print("")
-    except Exception as exc:
-        cached = load_update_state()
-        if cached:
-            update_status.update(cached)
-        update_status.update({
-            "checkedAt": int(time.time()),
-            "error": str(exc),
-        })
-
-
-async def update_check_loop():
-    await asyncio.to_thread(fetch_update_status_once)
-    while True:
-        await asyncio.sleep(UPDATE_CHECK_INTERVAL)
-        await asyncio.to_thread(fetch_update_status_once)
 
 
 def gen_id():
@@ -1513,7 +1413,6 @@ async def handle_connection_guarded(reader, writer, game: GameServer):
             "/notifications": lambda: game.notifications((query.get("id") or [""])[0]),
             "/friends/list": lambda: game.friends_list((query.get("id") or [""])[0]),
             "/lobby/state": lambda: game.state((query.get("lobbyId") or [""])[0]),
-            "/update/status": lambda: (200, update_status),
         }
 
         if method == "POST" and route in routes_post:
@@ -1559,16 +1458,6 @@ async def main():
     args = parser.parse_args()
 
     game = GameServer()
-    cached_update_state = load_update_state()
-    update_status.update({
-        "installedSha": str(cached_update_state.get("installedSha") or ""),
-        "latestSha": str(cached_update_state.get("latestSha") or ""),
-        "latestMessage": str(cached_update_state.get("latestMessage") or ""),
-        "latestUrl": str(cached_update_state.get("latestUrl") or UPDATE_REPO_URL),
-        "checkedAt": cached_update_state.get("checkedAt"),
-        "updateAvailable": bool(cached_update_state.get("updateAvailable")),
-        "error": "",
-    })
     connection_guard = asyncio.Semaphore(MAX_CONCURRENT_CONNECTIONS)
     server = await asyncio.start_server(
         lambda r, w: handle_connection(r, w, game, connection_guard), host=args.host, port=args.port
@@ -1577,7 +1466,6 @@ async def main():
     print(f"Pinterest Chase сервер запущен: http://127.0.0.1:{actual_port}")
     print("Для друзей по локальной сети: ваш айпи хоста из Radmin Vpn")
     print("Не закрывай это окно, пока идёт игра.")
-    asyncio.create_task(update_check_loop())
 
     async with server:
         await server.serve_forever()
