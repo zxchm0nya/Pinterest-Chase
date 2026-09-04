@@ -1,27 +1,25 @@
 @echo off
-chcp 65001 >nul
-REM start_public.bat — запуск сервера как ГЛОБАЛЬНОГО через Cloudflare Tunnel.
-REM Даёт публичный https-адрес (вида https://xxx.trycloudflare.com) без
-REM Radmin/проброса портов + DDoS-защита и CDN от Cloudflare.
-REM Требует: python и cloudflared (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
+REM start_public.bat - run the game server GLOBALLY via Cloudflare Tunnel.
+REM You get a public https URL, no Radmin and no port forwarding needed.
+REM Requires: python and cloudflared.
+REM cloudflared download page:
+REM https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
 
 set TRUST_PROXY=1
 
 where cloudflared >nul 2>nul
 if errorlevel 1 (
-  echo [ОШИБКА] cloudflared не найден в PATH.
-  echo Скачай cloudflared для Windows с официального сайта Cloudflare:
-  echo https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
-  echo Положи cloudflared.exe рядом или добавь в PATH, потом запусти снова.
+  echo [ERROR] cloudflared not found in PATH.
+  echo Download cloudflared for Windows from the Cloudflare site.
+  echo Put cloudflared.exe next to this file or add it to PATH, then run again.
   pause
   exit /b 1
 )
 
-echo Запускаю server.py (локально на 8787)...
+echo Starting server.py on port 8787...
 start "Pinterest Chase server" python server.py
 timeout /t 3 >nul
 
-echo Открываю публичный туннель. Скопируй URL вида https://xxx.trycloudflare.com
-echo и вставь его в index.html в REMOTE_BACKEND_URL, затем запушь на GitHub.
-echo Не закрывай это окно, пока идёт игра.
+echo Opening public tunnel. Copy the https URL and paste it as REMOTE_BACKEND_URL in index.html, then push to GitHub.
+echo Keep this window open while playing.
 cloudflared tunnel --url http://localhost:8787
