@@ -38,6 +38,17 @@ STRICT_ALLOWED_ORIGINS = {
     "http://localhost:8787",
     "http://127.0.0.1:8787",
 }
+# Бэкенд может стоять отдельно от фронта (например фронт на GitHub Pages,
+# а server.py на Render). Тогда браузер шлёт Origin вида
+# https://zxchm0nya.github.io — его надо разрешить для CORS, иначе fetch
+# с Pages до бэкенда будет заблокирован.
+# Дополнительные origins можно задать через env ALLOWED_ORIGINS
+# (список через запятую), напр.: ALLOWED_ORIGINS=https://zxchm0nya.github.io/Pinterest-Chase,https://example.com
+EXTRA_ALLOWED_ORIGINS = {
+    origin.strip()
+    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+}
 ALLOWED_VPN_NETWORKS = (
     ipaddress.ip_network("26.0.0.0/8"),
 )
@@ -129,13 +140,16 @@ def parse_header_map(header_text):
 def is_allowed_origin(origin):
     if not origin:
         return False
-    if origin in STRICT_ALLOWED_ORIGINS:
+    if origin in STRICT_ALLOWED_ORIGINS or origin in EXTRA_ALLOWED_ORIGINS:
         return True
     parsed = urllib.parse.urlparse(origin)
     host = (parsed.hostname or "").lower()
     if parsed.scheme not in ("http", "https"):
         return False
     if host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    # Любой проект на GitHub Pages: https://<user>.github.io
+    if parsed.scheme == "https" and (host.endswith(".github.io") or host == "github.io"):
         return True
     with contextlib.suppress(ValueError):
         ip = ipaddress.ip_address(host)

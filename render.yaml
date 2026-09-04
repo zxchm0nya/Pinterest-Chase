@@ -1,0 +1,19 @@
+# Render.com — бесплатный хостинг для server.py (бэкенд игры).
+# Как задеплоить:
+#   1. Залей папку Game в GitHub-репозиторий.
+#   2. На render.com: New → Web Service → выбери репозиторий.
+#   3. Start Command: python server.py (уже прописано ниже),
+#      Plan: Free. Нажми Create.
+#   4. Скопируй выданный URL вида https://pinterest-chase.onrender.com
+#      и вставь его в index.html в константу REMOTE_BACKEND_URL.
+#   5. Закоммить и запушь — сайт на GitHub Pages сам начнёт ходить на бэкенд.
+services:
+  - type: web
+    name: pinterest-chase
+    env: python
+    plan: free
+    startCommand: python server.py
+    envVars:
+      # Порт подставляет сам Render через $PORT — server.py его уже читает.
+      - key: ALLOWED_ORIGINS
+        value: https://zxchm0nya.github.io

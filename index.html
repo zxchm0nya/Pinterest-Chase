@@ -1519,10 +1519,28 @@
     setTimeout(() => layer.remove(), 2600);
   }
 
+  // Адрес Python-бэкенда (server.py), когда фронт открыт со статического
+  // хостинга (GitHub Pages). GitHub Pages умеет отдавать только статику,
+  // поэтому API лобби/друзей и /wiki-прокси должны ходить сюда.
+  // После деплоя server.py (напр. на Render) впиши сюда свой URL, например:
+  // const REMOTE_BACKEND_URL = 'https://pinterest-chase.onrender.com';
+  const REMOTE_BACKEND_URL = 'https://pinterest-chase.onrender.com';
+
   function defaultServerUrl() {
+    if (location.hostname && location.hostname.endsWith('.github.io')) return REMOTE_BACKEND_URL;
     if (location.protocol === 'http:' || location.protocol === 'https:') return location.origin;
     return 'http://localhost:8787';
   }
+
+  // Миграция: у тех, кто уже открывал игру с GitHub Pages, в localStorage
+  // мог сохраниться pc_serverUrl = https://zxchm0nya.github.io... — это статика,
+  // API там нет. Переключаем их на бэкенд автоматически.
+  try {
+    const saved = localStorage.getItem('pc_serverUrl') || '';
+    if (saved.includes('.github.io')) {
+      localStorage.setItem('pc_serverUrl', REMOTE_BACKEND_URL);
+    }
+  } catch (e) {}
 
   function decodeRestorePayload(value) {
     try {
@@ -2286,7 +2304,7 @@
           ${renderNotice(message)}
           <label>Адрес сервера</label>
           <input id="f-server" value="${escapeHtml(state.serverUrl)}">
-          <div class="hint">Если открыл страницу двойным кликом (file://) — вручную впиши адрес хоста, обычно <b>http://localhost:8787</b>.</div>
+          <div class="hint">Адрес уже подставлен автоматически. Если открыл страницу двойным кликом (file://) — впиши адрес хоста вручную, обычно <b>http://localhost:8787</b>. Radmin больше не нужен: игра работает через интернет.</div>
           <label>Твой ник</label>
           <input id="f-nick" placeholder="Например, Артём" value="${escapeHtml(state.nickname)}">
           <button id="b-register">Подключиться</button>
