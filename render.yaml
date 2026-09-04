@@ -17,3 +17,6 @@ services:
       # Порт подставляет сам Render через $PORT — server.py его уже читает.
       - key: ALLOWED_ORIGINS
         value: https://zxchm0nya.github.io
+      # Render — reverse-proxy: без этого rate-limit считал бы всех игроков одним IP.
+      - key: TRUST_PROXY
+        value: "1"

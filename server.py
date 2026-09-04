@@ -67,6 +67,19 @@ BLOCKED_STATIC_NAMES = {
 ALLOWED_STATIC_NAMES = {
 }
 request_buckets = {}
+banned_until = {}
+ip_connections = {}
+# Сколько одновременных соединений разрешено с одного IP.
+# Режет элементарный флуд коннектами (SYN/connection flood на уровне приложения).
+MAX_CONNECTIONS_PER_IP = 10
+# При жёстком превышении лимита IP банится на это время (сек).
+ABUSE_BAN_SECONDS = 120
+# Доверять ли заголовкам от reverse-proxy (Render, Cloudflare Tunnel, nginx).
+# ВАЖНО: за прокси все соединения идут с одного peer-IP, без этого флага
+# rate-limit будет считать всех игроков одним IP и душить всех подряд.
+# Включается через env: TRUST_PROXY=1 (уже прописано в render.yaml и start_public.bat).
+# Заголовки доверяем только от локального пира или при явном флаге.
+TRUST_PROXY = os.environ.get("TRUST_PROXY", "").strip().lower() in {"1", "true", "yes"}
 
 DEFAULT_WORDS = ["камень", "дерево", "роналду", "электростанция", "зубочистка", "ложка"]
 
@@ -173,18 +186,66 @@ def client_ip_from_writer(writer):
     return "unknown"
 
 
+def real_client_ip(peer_ip, headers):
+    """Реальный IP с учётом reverse-proxy (Render / Cloudflare Tunnel).
+
+    Заголовки X-Forwarded-For / CF-Connecting-IP легко подделать, поэтому
+    доверяем им только если: включён TRUST_PROXY=1 ИЛИ пир — локальный
+    (туннель/прокси на той же машине). Иначе — только peer IP.
+    """
+    peer_ip = str(peer_ip or "unknown")
+    try:
+        peer_is_local = ipaddress.ip_address(peer_ip).is_loopback
+    except ValueError:
+        peer_is_local = peer_ip in {"127.0.0.1", "::1", "unknown"}
+    if not (TRUST_PROXY or peer_is_local):
+        return peer_ip
+    for header_name in ("cf-connecting-ip", "x-real-ip"):
+        candidate = (headers.get(header_name) or "").strip().split(",")[0].strip()
+        if candidate:
+            with contextlib.suppress(ValueError):
+                ipaddress.ip_address(candidate)
+                return candidate
+    forwarded = (headers.get("x-forwarded-for") or "").strip()
+    if forwarded:
+        candidate = forwarded.split(",")[0].strip()
+        if candidate:
+            with contextlib.suppress(ValueError):
+                ipaddress.ip_address(candidate)
+                return candidate
+    return peer_ip
+
+
+def is_banned(ip):
+    until = banned_until.get(ip)
+    if not until:
+        return False
+    if time.monotonic() >= until:
+        banned_until.pop(ip, None)
+        return False
+    return True
+
+
 def rate_limited(ip):
     now = time.monotonic()
+    if is_banned(ip):
+        return True
     bucket = request_buckets.setdefault(ip, [])
     cutoff = now - RATE_WINDOW_SECONDS
     while bucket and bucket[0] < cutoff:
         bucket.pop(0)
     bucket.append(now)
-    if len(request_buckets) > 512:
+    if len(request_buckets) > 2048:
         for key in list(request_buckets.keys()):
             values = request_buckets.get(key) or []
             if not values or values[-1] < cutoff:
                 request_buckets.pop(key, None)
+            if len(request_buckets) <= 1024:
+                break
+    if len(bucket) > RATE_MAX_REQUESTS * 2:
+        # Жёсткий флуд — временный бан, чтобы не жечь CPU на каждый запрос.
+        banned_until[ip] = now + ABUSE_BAN_SECONDS
+        return True
     return len(bucket) > RATE_MAX_REQUESTS
 
 
@@ -1326,10 +1387,25 @@ async def serve_wikipedia_page(writer, query):
 
 
 async def handle_connection(reader, writer, game: GameServer, connection_guard):
+    peer_ip = client_ip_from_writer(writer)
+    over_limit = False
     try:
+        current = ip_connections.get(peer_ip, 0) + 1
+        ip_connections[peer_ip] = current
+        if current > MAX_CONNECTIONS_PER_IP:
+            over_limit = True
+            writer.write(json_response(429, {"error": "Too many connections"}))
+            await writer.drain()
+            return
         async with connection_guard:
             await handle_connection_guarded(reader, writer, game)
     finally:
+        with contextlib.suppress(Exception):
+            left = ip_connections.get(peer_ip, 1) - 1
+            if left <= 0:
+                ip_connections.pop(peer_ip, None)
+            else:
+                ip_connections[peer_ip] = left
         with contextlib.suppress(Exception):
             writer.close()
             await writer.wait_closed()
@@ -1338,11 +1414,7 @@ async def handle_connection(reader, writer, game: GameServer, connection_guard):
 async def handle_connection_guarded(reader, writer, game: GameServer):
     origin = None
     try:
-        client_ip = client_ip_from_writer(writer)
-        if rate_limited(client_ip):
-            writer.write(json_response(429, {"error": "Too many requests"}))
-            await writer.drain()
-            return
+        peer_ip = client_ip_from_writer(writer)
 
         header, body = await read_http_request(reader)
         if not header:
@@ -1350,6 +1422,13 @@ async def handle_connection_guarded(reader, writer, game: GameServer):
         header_text = header.decode("utf-8", errors="ignore")
         header_map = parse_header_map(header_text)
         origin = header_map.get("origin")
+        # Реальный IP определяем ПОСЛЕ чтения заголовков: за прокси/туннелем
+        # peer всегда один и тот же, без X-Forwarded-For всех бы душило как одного.
+        client_ip = real_client_ip(peer_ip, header_map)
+        if rate_limited(client_ip):
+            writer.write(json_response(429, {"error": "Too many requests"}, origin=origin))
+            await writer.drain()
+            return
         request_line, *_ = header_text.split("\r\n")
         try:
             method, path, _ = request_line.split(" ", 2)
@@ -1372,6 +1451,13 @@ async def handle_connection_guarded(reader, writer, game: GameServer):
 
         if method == "OPTIONS":
             writer.write(http_response(204, origin=origin))
+            await writer.drain()
+            return
+
+        # Дешёвый health-check для хостингов/мониторинга (Render, UptimeRobot).
+        # Не трогает игровое состояние.
+        if method == "GET" and parsed.path == "/healthz":
+            writer.write(json_response(200, {"ok": True}, origin=origin))
             await writer.drain()
             return
 
@@ -1479,6 +1565,12 @@ async def main():
     actual_port = server.sockets[0].getsockname()[1]
     print(f"Pinterest Chase сервер запущен: http://127.0.0.1:{actual_port}")
     print("Для друзей по локальной сети: ваш айпи хоста из Radmin Vpn")
+    print(f"Анти-абьюз: {RATE_MAX_REQUESTS} req/{RATE_WINDOW_SECONDS}s на IP, "
+          f"макс {MAX_CONCURRENT_CONNECTIONS} соединений всего, "
+          f"{MAX_CONNECTIONS_PER_IP} с одного IP, бан за флуд {ABUSE_BAN_SECONDS}s. "
+          f"TRUST_PROXY={'ON' if TRUST_PROXY else 'OFF'}.")
+    print("Для ГЛОБАЛЬНОГО доступа без Radmin: запусти start_public.bat "
+          "(нужен cloudflared) и вставь выданный https-URL в REMOTE_BACKEND_URL в index.html.")
     print("Не закрывай это окно, пока идёт игра.")
 
     async with server:
