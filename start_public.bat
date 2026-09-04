@@ -20,6 +20,12 @@ echo Starting server.py on port 8787...
 start "Pinterest Chase server" python server.py
 timeout /t 3 >nul
 
-echo Opening public tunnel. Copy the https URL and paste it as REMOTE_BACKEND_URL in index.html, then push to GitHub.
-echo Keep this window open while playing.
-cloudflared tunnel --url http://localhost:8787
+echo ========================================================
+echo Connecting via Cloudflare Quick Tunnel (HTTP/2, IPv4)...
+echo ========================================================
+cloudflared tunnel --edge-ip-version 4 --protocol http2 --url http://localhost:8787
+if errorlevel 1 (
+  echo.
+  echo [Notice] Standard tunnel blocked by local DNS/ISP. Trying fallback mode...
+  cloudflared tunnel --protocol http2 --edge-ip-version 4 --region auto --url http://localhost:8787
+)
